@@ -141,6 +141,18 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
   MINMAXINFO* minMaxInfo = NULL;
 
   switch (message) {
+  case WM_COMMAND:
+    switch (LOWORD(wParam)) {
+    case IDC_PROXY_BUTTON:
+      UpdateProxyState();
+      SetWindowText(button, GetButtonText());
+      break;
+
+    default:
+      return DefWindowProc(hWnd, message, wParam, lParam);
+    }
+    break;
+
   case WM_CREATE:
     /* Create the button */
     button = CreateWindowEx(BS_PUSHBUTTON, _T("BUTTON"), GetButtonText(),
@@ -154,30 +166,17 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     StartRegistryChangeMonitor(hWnd);
     break;
 
-  case WM_COMMAND:
-    switch (LOWORD(wParam)) {
-    case IDC_PROXY_BUTTON:
-      UpdateProxyState();
-      SetWindowText(button, GetButtonText());
-      break;
-
-    default:
-      return DefWindowProc(hWnd, message, wParam, lParam);
-    }
+  case WM_DESTROY:
+    StopRegistryChangeMonitor();
+    DestroyWindow(button);
+    DeleteObject(buttonFont);
+    PostQuitMessage(0);
     break;
 
   case WM_GETMINMAXINFO:
-    // set the MINMAXINFO structure pointer 
     minMaxInfo = (MINMAXINFO*)lParam;
     minMaxInfo->ptMinTrackSize.x = 500;
     minMaxInfo->ptMinTrackSize.y = 250;
-    break; 
-
-  case WM_SIZE:
-    GetClientRect(hWnd, &rect);
-    width = rect.right - rect.left - 20;
-    height = rect.bottom - rect.top - 20;
-    MoveWindow(button, 10, 10, width, height, TRUE);
     break;
 
   case WM_PROXYSETTINGS_CHANGED:
@@ -185,11 +184,11 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     SetWindowText(button, GetButtonText());
     break;
 
-  case WM_DESTROY:
-    StopRegistryChangeMonitor();
-    DestroyWindow(button);
-    DeleteObject(buttonFont);
-    PostQuitMessage(0);
+  case WM_SIZE:
+    GetClientRect(hWnd, &rect);
+    width = rect.right - rect.left - 20;
+    height = rect.bottom - rect.top - 20;
+    MoveWindow(button, 10, 10, width, height, TRUE);
     break;
 
   default:
