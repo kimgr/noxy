@@ -1,0 +1,161 @@
+diff --git a/noxy.c b/noxy.c
+index 59ae50e..6f87ab4 100644
+--- a/noxy.c
++++ b/noxy.c
+@@ -1,4 +1,5 @@
+ #include "stdafx.h"
++#include <shellapi.h>
+ #include "resource.h"
+ #include "noxy.h"
+ 
+@@ -10,7 +11,8 @@ static HKEY notificationKey;
+ static HANDLE notificationEvent;
+ static HANDLE notificationWait;
+ 
+-#define WM_PROXYSETTINGS_CHANGED WM_APP + 100
++#define WM_PROXYSETTINGS_CHANGED  WM_USER + 0
++#define WM_TRAY_RESTORE           WM_USER + 1
+ 
+ static HFONT CreateButtonFont(HWND hWnd) {
+   static const long BUTTON_FONT_SIZE = 64;
+@@ -107,6 +109,39 @@ static LPCTSTR GetButtonText() {
+     return _T("Proxy: disabled");
+ }
+ 
++static void NotifyIcon_Add(HWND hwnd, LPCTSTR text) {
++  NOTIFYICONDATA nid = {0};
++  nid.cbSize = sizeof(nid);
++  nid.hWnd = hwnd;
++  nid.uID = IDI_TRAY_MINIMIZE;
++  nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
++  nid.hIcon = LoadIcon(appInstance, MAKEINTRESOURCE(IDI_NOXY));
++  nid.uCallbackMessage = WM_TRAY_RESTORE;
++  _tcscpy_s(nid.szTip, _countof(nid.szTip), text);
++
++  Shell_NotifyIcon(NIM_ADD, &nid);
++}
++
++static void NotifyIcon_Update(HWND hwnd, LPCTSTR text) {
++  NOTIFYICONDATA nid = {0};
++  nid.cbSize = sizeof(nid);
++  nid.hWnd = hwnd;
++  nid.uID = IDI_TRAY_MINIMIZE;
++  nid.uFlags = NIF_TIP;
++  _tcscpy_s(nid.szTip, _countof(nid.szTip), text);
++
++  Shell_NotifyIcon(NIM_MODIFY, &nid);
++}
++
++static void NotifyIcon_Delete(HWND hwnd) {
++  NOTIFYICONDATA nid = {0};
++  nid.cbSize = sizeof(nid);
++  nid.hWnd = hwnd;
++  nid.uID = IDI_TRAY_MINIMIZE;
++
++  Shell_NotifyIcon(NIM_DELETE, &nid);
++}
++
+ static void CALLBACK
+ OnRegistryChange(PVOID lpParameter, BOOLEAN TimerOrWaitFired) {
+   PostMessage((HWND)lpParameter, WM_PROXYSETTINGS_CHANGED, 0, 0);
+@@ -139,21 +174,9 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+   RECT rect = {0};
+   int width, height;
+   MINMAXINFO* minMaxInfo = NULL;
++  LPCTSTR text = NULL;
+ 
+   switch (message) {
+-  case WM_CREATE:
+-    /* Create the button */
+-    button = CreateWindowEx(BS_PUSHBUTTON, _T("BUTTON"), GetButtonText(),
+-                            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 10, 10,
+-                            10, hWnd, (HMENU)IDC_PROXY_BUTTON, appInstance, 0);
+-    buttonFont = CreateButtonFont(hWnd);
+-    SendMessage(button, WM_SETFONT, (WPARAM)buttonFont,
+-                (LPARAM)MAKELONG(TRUE, 0));
+-
+-    /* Set up registry change notification */
+-    StartRegistryChangeMonitor(hWnd);
+-    break;
+-
+   case WM_COMMAND:
+     switch (LOWORD(wParam)) {
+     case IDC_PROXY_BUTTON:
+@@ -166,6 +189,26 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+     }
+     break;
+ 
++  case WM_CREATE:
++    /* Create the button */
++    button = CreateWindowEx(BS_PUSHBUTTON, _T("BUTTON"), GetButtonText(),
++      WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 10, 10, 10,
++      10, hWnd, (HMENU)IDC_PROXY_BUTTON, appInstance, 0);
++    buttonFont = CreateButtonFont(hWnd);
++    SendMessage(button, WM_SETFONT, (WPARAM)buttonFont,
++      (LPARAM)MAKELONG(TRUE, 0));
++
++    /* Set up registry change notification */
++    StartRegistryChangeMonitor(hWnd);
++    break;
++
++  case WM_DESTROY:
++    StopRegistryChangeMonitor();
++    DestroyWindow(button);
++    DeleteObject(buttonFont);
++    PostQuitMessage(0);
++    break;
++
+   case WM_GETMINMAXINFO:
+     // set the MINMAXINFO structure pointer 
+     minMaxInfo = (MINMAXINFO*)lParam;
+@@ -173,6 +216,14 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+     minMaxInfo->ptMinTrackSize.y = 250;
+     break; 
+ 
++  case WM_PROXYSETTINGS_CHANGED:
++    /* Proxy settings changed elsewhere, update the UI */
++    text = GetButtonText();
++    SetWindowText(button, text);
++    if (!IsWindowVisible(hWnd))
++      NotifyIcon_Update(hWnd, text);
++    break;
++
+   case WM_SIZE:
+     GetClientRect(hWnd, &rect);
+     width = rect.right - rect.left - 20;
+@@ -180,16 +231,17 @@ WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+     MoveWindow(button, 10, 10, width, height, TRUE);
+     break;
+ 
+-  case WM_PROXYSETTINGS_CHANGED:
+-    /* Proxy settings changed elsewhere, update the UI */
+-    SetWindowText(button, GetButtonText());
+-    break;
++  case WM_SYSCOMMAND:
++    if (wParam == SC_MINIMIZE) {
++      NotifyIcon_Add(hWnd, GetButtonText());
++      ShowWindow(hWnd, SW_HIDE);
++    } else {
++      return DefWindowProc(hWnd, message, wParam, lParam);
++    }
+ 
+-  case WM_DESTROY:
+-    StopRegistryChangeMonitor();
+-    DestroyWindow(button);
+-    DeleteObject(buttonFont);
+-    PostQuitMessage(0);
++  case WM_TRAY_RESTORE:
++    NotifyIcon_Delete(hWnd);
++    ShowWindow(hWnd, SW_SHOW);
+     break;
+ 
+   default:
+diff --git a/resource.h b/resource.h
+index ae37632..e2f22b9 100644
+--- a/resource.h
++++ b/resource.h
+@@ -3,3 +3,4 @@
+ #define IDI_SMALL 101
+ #define IDI_NOXY 102
+ #define IDC_PROXY_BUTTON 103
++#define IDI_TRAY_MINIMIZE 104
